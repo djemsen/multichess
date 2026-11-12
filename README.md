@@ -70,11 +70,14 @@ the same network and not on a guest/AP-isolated SSID.
 ### Single player
 
 Click **Play Single Player** on the opening screen to play White against the
-computer. Pick a difficulty first:
+computer opponent, powered by the open-source **Lozza 11** UCI chess engine.
+Pick a difficulty first:
 
-- **Easy** — the computer plays a random legal move.
-- **Medium** — it looks one move ahead and takes material when it can.
-- **Hard** — it searches deeper and punishes loose pieces.
+- **Easy** — Depth 1 evaluation (~1000 Elo); fast and friendly for beginners.
+- **Medium** — Depth 4 search (~1600 Elo); solid tactical play that spots standard combinations.
+- **Hard** — Depth 8 search (~2100+ Elo); deep positional and tactical calculations that punish inaccuracies.
+
+The engine executes in a background **Web Worker** thread, so searches never lag the UI, clocks, or audio. If Web Workers are disabled or unavailable in the client environment, the game seamlessly falls back to the built-in minimax engine.
 
 The choice is remembered in `localStorage` and is shown next to the computer's
 name in the player panel.
@@ -243,8 +246,7 @@ test runner. No packages are installed.
 
 - LAN/local-network play only; there is no internet matchmaking or relay.
 - No undo, spectators, or persistent history.
-- The computer opponent is a small built-in search engine, not a strong chess
-  engine.
+- The AI engine runs client-side in browser Web Workers; search depth is scaled for web responsiveness rather than grandmaster time controls.
 - Traffic is plain HTTP. The room code and player tokens are not encrypted; use
   it on a trusted home network, not on public Wi-Fi.
 - Server memory is the only store: restarting the process ends all games.
