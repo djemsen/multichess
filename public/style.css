@@ -96,10 +96,12 @@ body {
 
 .icon-btn .sound-slash { display: none; }
 .icon-btn .music-slash { display: none; }
+.icon-btn .eval-slash { display: none; }
 .icon-btn.muted { color: var(--muted); }
 .icon-btn.muted .sound-wave { display: none; }
 .icon-btn.muted .sound-slash { display: block; }
 .icon-btn.muted .music-slash { display: block; }
+.icon-btn.muted .eval-slash { display: block; }
 
 .music-volume {
   -webkit-appearance: none;
@@ -469,6 +471,50 @@ select:focus {
 .board-wrap {
   position: relative;
   flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.eval-bar {
+  position: relative;
+  width: 24px;
+  flex: 0 0 24px;
+  background: #181d24;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .3);
+  user-select: none;
+}
+
+.eval-bar.flipped {
+  justify-content: flex-start;
+}
+
+.eval-fill {
+  width: 100%;
+  height: 50%;
+  background: #f1f5f9;
+  transition: height .35s ease;
+}
+
+.eval-score {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 6px;
+  font-size: .65rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 3px;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  color: #0f172a;
 }
 
 .board {
@@ -1014,6 +1060,10 @@ select:focus {
 
   .waiting-card { padding: 20px; }
   .big-code { font-size: 1.65rem; }
+
+  .board-wrap { gap: 6px; }
+  .eval-bar { width: 16px; flex: 0 0 16px; }
+  .eval-score { font-size: .52rem; }
 
   .moves { max-height: 170px; }
 }

@@ -33,6 +33,14 @@
           <path class="sound-slash" d="m4 4 16 16"/>
         </svg>
       </button>
+      <button id="evalBtn" class="icon-btn" type="button" aria-pressed="true" aria-label="Toggle evaluation bar" title="Toggle evaluation bar">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="6" y1="20" x2="6" y2="14"/>
+          <line x1="12" y1="20" x2="12" y2="8"/>
+          <line x1="18" y1="20" x2="18" y2="4"/>
+          <path class="eval-slash" d="m4 4 16 16"/>
+        </svg>
+      </button>
       <button id="roomBadge" class="room-badge hidden" type="button" title="Copy invite link">
         <span id="connDot" class="conn-dot offline" aria-hidden="true"></span>
         <span>Room <strong id="roomBadgeCode">-----</strong></span>
@@ -131,6 +139,10 @@
 
   <section id="game" class="game hidden">
     <div class="board-wrap">
+      <div id="evalBar" class="eval-bar hidden" aria-label="Position evaluation">
+        <div id="evalFill" class="eval-fill"></div>
+        <span id="evalScore" class="eval-score">0.0</span>
+      </div>
       <div id="board" class="board" aria-label="Chess board"></div>
 
       <div id="waiting" class="board-overlay hidden">
@@ -230,6 +242,7 @@
 
 <script src="engine.js"></script>
 <script src="clock.js"></script>
+<script src="evaluator.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

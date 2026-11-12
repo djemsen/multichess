@@ -3,10 +3,12 @@
 
   var ENG = window.ChessEngine;
   var CLOCK = window.ChessClock;
+  var EVAL = window.ChessEvaluator;
   var GLYPHS = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
   var SESSION_KEY = 'multichess.session';
   var NAME_KEY = 'multichess.name';
   var DIFFICULTY_KEY = 'multichess.difficulty';
+  var EVAL_KEY = 'multichess.eval';
   var DIFFICULTIES = {
     easy: { label: 'Easy', depth: 0, random: true },
     medium: { label: 'Medium', depth: 1, random: false },
@@ -25,6 +27,9 @@
     difficulty: 'medium',
     pendingMode: null,
     timeControl: 'normal',
+    evalEnabled: true,
+    evalBridge: null,
+    evalScore: null,
     state: null,
     selected: null,
     legal: [],
@@ -470,6 +475,22 @@
     }
   }
 
+  function readStoredEval() {
+    try {
+      return localStorage.getItem(EVAL_KEY) !== '0';
+    } catch (err) {
+      return true;
+    }
+  }
+
+  function saveStoredEval(enabled) {
+    try {
+      localStorage.setItem(EVAL_KEY, enabled ? '1' : '0');
+    } catch (err) {
+      // ignore
+    }
+  }
+
   function other(color) {
     return color === 'w' ? 'b' : 'w';
   }
@@ -844,25 +865,48 @@
       return;
     }
 
-    var move = chooseAIMove(game, app.difficulty);
-    if (!move) return;
+    function applyAIMove(move) {
+      if (!move) return;
+      app.busy = true;
+      render();
 
-    app.busy = true;
-    render();
+      var spent = commitLocalClock();
+      if (spent && spent.remaining <= 0) {
+        app.busy = false;
+        finishLocalTimeout(spent.color);
+        return;
+      }
 
-    var spent = commitLocalClock();
-    if (spent && spent.remaining <= 0) {
+      var san = ENG.makeMove(game, move);
+      sound.playForSan(san);
+      if (!game.over) startLocalClock(game.turn);
+
       app.busy = false;
-      finishLocalTimeout(spent.color);
-      return;
+      render();
+      triggerEvaluation(game);
     }
 
-    var san = ENG.makeMove(game, move);
-    sound.playForSan(san);
-    if (!game.over) startLocalClock(game.turn);
+    var depths = { easy: 1, medium: 4, hard: 8 };
+    var depth = depths[app.difficulty] || 4;
 
-    app.busy = false;
-    render();
+    if (app.evalBridge && app.evalBridge.isAvailable()) {
+      var fen = ENG.toFEN(game);
+      app.evalBridge.findMove(fen, depth, function (best) {
+        if (!best) {
+          applyAIMove(chooseAIMove(game, app.difficulty));
+          return;
+        }
+        var move = ENG.findLegalMove(game, best.from, best.to, best.promo);
+        if (move) {
+          applyAIMove(move);
+        } else {
+          applyAIMove(chooseAIMove(game, app.difficulty));
+        }
+      });
+    } else {
+      var move = chooseAIMove(game, app.difficulty);
+      applyAIMove(move);
+    }
   }
 
   function localMove(move) {
@@ -890,6 +934,7 @@
 
     app.busy = false;
     render();
+    triggerEvaluation(app.state.game);
 
     var game = app.state.game;
     if (!game.over && game.turn !== app.color) {
@@ -1079,6 +1124,7 @@
     }
 
     render();
+    triggerEvaluation(state.game);
 
     if (previous && previous.room === state.room) {
       if (game.moveLog.length > previous.game.moveLog.length) {
@@ -1124,6 +1170,7 @@
     renderBoard();
     renderSeats();
     renderClocks();
+    renderEvalBar();
     renderStatus();
     renderControls();
     renderOffers();
@@ -1290,6 +1337,97 @@
     }
 
     renderClocks();
+  }
+
+  function updateEvalButton() {
+    var btn = $('evalBtn');
+    if (!btn) return;
+    btn.classList.toggle('muted', !app.evalEnabled);
+    btn.setAttribute('aria-pressed', String(app.evalEnabled));
+    btn.title = app.evalEnabled ? 'Hide evaluation bar' : 'Show evaluation bar';
+  }
+
+  function toggleEval() {
+    app.evalEnabled = !app.evalEnabled;
+    saveStoredEval(app.evalEnabled);
+    updateEvalButton();
+    renderEvalBar();
+    if (app.evalEnabled && app.state && app.state.game) {
+      triggerEvaluation(app.state.game);
+    }
+  }
+
+  function updateEvalBarUI(percent, text, whiteAhead, isFlipped) {
+    var bar = $('evalBar');
+    var fill = $('evalFill');
+    var score = $('evalScore');
+    if (!bar || !fill || !score) return;
+
+    bar.classList.toggle('flipped', Boolean(isFlipped));
+    fill.style.height = percent + '%';
+    score.textContent = text;
+
+    if (isFlipped) {
+      if (whiteAhead) {
+        score.style.top = '6px';
+        score.style.bottom = 'auto';
+        score.style.color = '#0f172a';
+      } else {
+        score.style.bottom = '6px';
+        score.style.top = 'auto';
+        score.style.color = '#f1f5f9';
+      }
+    } else {
+      if (whiteAhead) {
+        score.style.bottom = '6px';
+        score.style.top = 'auto';
+        score.style.color = '#0f172a';
+      } else {
+        score.style.top = '6px';
+        score.style.bottom = 'auto';
+        score.style.color = '#f1f5f9';
+      }
+    }
+  }
+
+  function renderEvalBar() {
+    var bar = $('evalBar');
+    if (!bar) return;
+    var state = app.state;
+    var visible = app.evalEnabled && state && (state.status === 'playing' || state.status === 'over');
+    bar.classList.toggle('hidden', !visible);
+    if (!visible) return;
+
+    if (app.evalScore) {
+      updateEvalBarUI(app.evalScore.percent, app.evalScore.text, app.evalScore.whiteVal >= 0, app.flipped);
+    } else {
+      updateEvalBarUI(50, '0.0', true, app.flipped);
+    }
+  }
+
+  function triggerEvaluation(game) {
+    if (!app.evalEnabled || !game) return;
+    if (game.over) {
+      if (game.inCheck) {
+        var whiteWins = game.turn === 'b';
+        app.evalScore = {
+          percent: whiteWins ? 98 : 2,
+          text: whiteWins ? '+M0' : '-M0',
+          whiteVal: whiteWins ? 10000 : -10000
+        };
+      } else {
+        app.evalScore = { percent: 50, text: '0.0', whiteVal: 0 };
+      }
+      renderEvalBar();
+      return;
+    }
+
+    if (!app.evalBridge || !app.evalBridge.isAvailable()) return;
+    var fen = ENG.toFEN(game);
+    app.evalBridge.evaluate(fen, game.turn, function (data) {
+      app.evalScore = data;
+      renderEvalBar();
+    });
   }
 
   function renderStatus() {
@@ -1664,6 +1802,8 @@
       sound.toggle();
     });
 
+    $('evalBtn').addEventListener('click', toggleEval);
+
     $('musicBtn').addEventListener('click', function () {
       sound.toggleMusic();
       syncMusic();
@@ -1801,6 +1941,13 @@
     bindEvents();
     sound.updateButtons();
     $('musicVolume').value = String(Math.round(sound.getMusicVolume() * 100));
+
+    app.evalEnabled = readStoredEval();
+    if (EVAL && typeof EVAL.createBridge === 'function') {
+      app.evalBridge = EVAL.createBridge('lozza.js');
+      app.evalBridge.init();
+    }
+    updateEvalButton();
 
     app.difficulty = readStoredDifficulty();
     $('difficultySelect').value = app.difficulty;

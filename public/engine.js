@@ -328,6 +328,43 @@
     return san;
   }
 
+  function toFEN(game) {
+    if (!game || !Array.isArray(game.board)) return '';
+    var rows = [];
+    for (var r = 0; r < 8; r++) {
+      var empty = 0;
+      var rowStr = '';
+      for (var c = 0; c < 8; c++) {
+        var piece = game.board[r][c];
+        if (!piece) {
+          empty++;
+        } else {
+          if (empty > 0) {
+            rowStr += empty;
+            empty = 0;
+          }
+          var type = piece[1];
+          rowStr += piece[0] === 'w' ? type.toUpperCase() : type.toLowerCase();
+        }
+      }
+      if (empty > 0) rowStr += empty;
+      rows.push(rowStr);
+    }
+
+    var castling = game.castling || {};
+    var castlingStr = '';
+    if (castling.wK) castlingStr += 'K';
+    if (castling.wQ) castlingStr += 'Q';
+    if (castling.bK) castlingStr += 'k';
+    if (castling.bQ) castlingStr += 'q';
+    if (!castlingStr) castlingStr = '-';
+
+    var epStr = game.ep ? sqName(game.ep[0], game.ep[1]) : '-';
+    var fullmove = game.fullmove || 1;
+
+    return rows.join('/') + ' ' + (game.turn || 'w') + ' ' + castlingStr + ' ' + epStr + ' 0 ' + fullmove;
+  }
+
   function makeMove(game, move) {
     var color = game.turn;
     var board = game.board;
@@ -413,6 +450,7 @@
     legalMovesFor: legalMovesFor,
     allLegalMoves: allLegalMoves,
     toSAN: toSAN,
+    toFEN: toFEN,
     makeMove: makeMove,
     findLegalMove: findLegalMove
   };

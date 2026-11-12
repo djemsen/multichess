@@ -12,6 +12,7 @@ accounts, no internet matchmaking, and no npm dependencies.
 - Two-player LAN games with room codes and invite links.
 - Single-player games with **Easy**, **Medium**, and **Hard** computer levels.
 - **Normal** games with no clock and **Blitz** games with ten minutes per player.
+- Live **Evaluation Bar** alongside the board, powered by the open-source **Lozza 11** UCI engine in a Web Worker.
 - Server-authoritative rules and clocks, live SSE updates, and automatic reconnects.
 - Real-time chat, draw offers, resignation, and rematches.
 - Generated move/chat sounds and ambient music — no audio files.
@@ -183,6 +184,11 @@ browser B ── POST /api/move ──┘          │
 - `public/clock.js` is a second shared UMD module for Blitz clock math and
   `m:ss` formatting; the server uses it as the authority and the browser uses it
   to count down smoothly between updates.
+- `public/evaluator.js` bridges the UI to the background engine worker, parsing
+  centipawn evaluations (`score cp`) and calculating winning percentages for the
+  live evaluation bar.
+- `public/lozza.js` is the open-source Lozza 11 UCI chess engine by Colin Jenkins,
+  running in a client-side Web Worker with zero npm dependencies and zero server load.
 - Updates are pushed with **Server-Sent Events** (`GET /api/events`); actions
   use small JSON `POST` requests. No WebSocket library is needed.
 - Rooms live in memory and are deleted when empty or after 6 hours of inactivity
@@ -211,12 +217,15 @@ multichess/
 ├── public/
 │   ├── index.html         lobby, board, player panel, modals
 │   ├── style.css          dark responsive theme
-│   ├── engine.js          shared chess rules (server + browser)
+│   ├── engine.js          shared chess rules and FEN generator
 │   ├── clock.js           shared Blitz clock math and formatting
+│   ├── evaluator.js       eval bar math, UCI parser and worker bridge
+│   ├── lozza.js           Lozza 11 open-source chess engine
 │   └── app.js             session, SSE, board rendering, chat, actions, sound
 └── test/
-    ├── engine.test.js     rules, SAN, castling, en passant, promotion
+    ├── engine.test.js     rules, SAN, castling, en passant, promotion, FEN
     ├── clock.test.js      clock countdown, commit, snapshot, formatting
+    ├── evaluator.test.js  eval bar math, score parsing and UCI move conversion
     └── server.test.js     HTTP API, SSE, draw/resign/rematch, reconnect
 ```
 

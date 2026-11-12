@@ -170,3 +170,14 @@ test('findLegalMove rejects malformed, out-of-turn and illegal moves', () => {
   assert.equal(chess.findLegalMove(game, [6, 4], [6, 4], null), null);
   assert.ok(chess.findLegalMove(game, [6, 4], [4, 4], null));
 });
+
+test('toFEN converts board state to standard FEN', () => {
+  const game = chess.createGame();
+  assert.equal(chess.toFEN(game), 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+
+  play(game, [6, 4], [4, 4]); // 1. e4
+  assert.equal(chess.toFEN(game), 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1');
+
+  play(game, [1, 2], [3, 2]); // 1... c5
+  assert.equal(chess.toFEN(game), 'rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2');
+});
