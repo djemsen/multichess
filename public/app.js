@@ -2,6 +2,7 @@
   'use strict';
 
   var ENG = window.ChessEngine;
+  var CLOCK = window.ChessClock;
   var GLYPHS = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
   var SESSION_KEY = 'multichess.session';
   var NAME_KEY = 'multichess.name';
@@ -22,6 +23,8 @@
     color: null,
     name: null,
     difficulty: 'medium',
+    pendingMode: null,
+    timeControl: 'normal',
     state: null,
     selected: null,
     legal: [],
@@ -563,6 +566,7 @@
     saveName(session.name);
 
     $('modeScreen').classList.add('hidden');
+    $('timingScreen').classList.add('hidden');
     $('lobby').classList.add('hidden');
     $('game').classList.remove('hidden');
     $('roomBadge').classList.remove('hidden');
@@ -592,9 +596,13 @@
 
     $('game').classList.add('hidden');
     $('modeScreen').classList.add('hidden');
+    $('timingScreen').classList.add('hidden');
     $('lobby').classList.remove('hidden');
     $('roomBadge').classList.add('hidden');
     $('lobbyError').textContent = message || '';
+    setText($('lobbyTimeControl'), app.timeControl === 'blitz'
+      ? 'Blitz · 10 minutes per player'
+      : 'Normal · No clock');
     setConnection(false);
     syncMusic();
   }
@@ -616,17 +624,43 @@
 
     $('game').classList.add('hidden');
     $('modeScreen').classList.remove('hidden');
+    $('timingScreen').classList.add('hidden');
     $('lobby').classList.add('hidden');
     $('roomBadge').classList.add('hidden');
     $('lobbyError').textContent = '';
+    app.pendingMode = null;
     setConnection(false);
     syncMusic();
+  }
+
+  function showTimingScreen(mode) {
+    showModeScreen();
+    app.pendingMode = mode;
+    setText($('timingTitle'), mode === 'single' ? 'Single player' : 'Multiplayer');
+    setText($('timingSub'), mode === 'single'
+      ? 'Play White against the computer. Choose a time control.'
+      : 'Create or join a room. Choose the time control for a new room.');
+    $('modeScreen').classList.add('hidden');
+    $('timingScreen').classList.remove('hidden');
+  }
+
+  function chooseTimeControl(mode) {
+    app.timeControl = mode === 'blitz' ? 'blitz' : 'normal';
+    if (app.pendingMode === 'single') {
+      startSinglePlayer();
+    } else if (app.pendingMode === 'multi') {
+      app.pendingMode = null;
+      showLobby();
+    } else {
+      showModeScreen();
+    }
   }
 
   function startSinglePlayer() {
     var name = $('nameInput').value;
     var game = ENG.createGame();
     var difficulty = $('difficultySelect').value;
+    var blitz = app.timeControl === 'blitz';
 
     if (!Object.prototype.hasOwnProperty.call(DIFFICULTIES, difficulty)) {
       difficulty = app.difficulty;
@@ -641,6 +675,8 @@
     app.state = {
       room: null,
       status: 'playing',
+      timeControl: blitz ? 'blitz' : 'normal',
+      clock: blitz ? CLOCK.create() : null,
       seats: {
         w: { name: name, connected: true },
         b: { name: 'Computer (' + DIFFICULTIES[difficulty].label + ')', connected: true }
@@ -649,6 +685,8 @@
       offers: { draw: null, rematch: [] },
       chat: []
     };
+    if (app.state.clock) CLOCK.start(app.state.clock, 'w');
+
     app.selected = null;
     app.legal = [];
     app.busy = false;
@@ -659,6 +697,7 @@
     app.chatSignature = null;
 
     $('modeScreen').classList.add('hidden');
+    $('timingScreen').classList.add('hidden');
     $('lobby').classList.add('hidden');
     $('game').classList.remove('hidden');
     $('roomBadge').classList.add('hidden');
@@ -671,7 +710,42 @@
   }
 
   function startMultiplayer() {
-    showLobby();
+    showTimingScreen('multi');
+  }
+
+  function clockExpired() {
+    var state = app.state;
+    if (!state || !state.clock || !state.clock.active) return false;
+    return CLOCK.remaining(state.clock, state.clock.active) <= 0;
+  }
+
+  function commitLocalClock() {
+    var state = app.state;
+    if (!state || !state.clock) return null;
+    return CLOCK.commit(state.clock);
+  }
+
+  function startLocalClock(color) {
+    if (app.state && app.state.clock) CLOCK.start(app.state.clock, color);
+  }
+
+  function finishLocalTimeout(loser) {
+    var state = app.state;
+    if (!state || !state.clock || !state.game) return;
+
+    state.clock[loser] = 0;
+    state.clock.active = null;
+    state.clock.since = null;
+    state.game.over = true;
+    state.status = 'over';
+
+    var winner = loser === 'w' ? 'b' : 'w';
+    state.game.result = colorName(winner) + ' wins — ' +
+      colorName(loser) + ' ran out of time';
+    state.offers.draw = null;
+
+    render();
+    syncMusic();
   }
 
   function cloneLocalGame(game) {
@@ -765,13 +839,27 @@
     var game = state && state.game;
     if (!game || game.over || state.status !== 'playing') return;
     if (game.turn !== 'b') return;
+    if (clockExpired()) {
+      finishLocalTimeout(state.clock.active);
+      return;
+    }
 
     var move = chooseAIMove(game, app.difficulty);
     if (!move) return;
 
     app.busy = true;
     render();
+
+    var spent = commitLocalClock();
+    if (spent && spent.remaining <= 0) {
+      app.busy = false;
+      finishLocalTimeout(spent.color);
+      return;
+    }
+
     ENG.makeMove(game, move);
+    if (!game.over) startLocalClock(game.turn);
+
     app.busy = false;
     render();
   }
@@ -779,12 +867,24 @@
   function localMove(move) {
     if (!app.state || app.state.status !== 'playing') return;
     if (app.state.game.over) return;
+    if (clockExpired()) {
+      finishLocalTimeout(app.state.clock.active);
+      return;
+    }
 
     app.busy = true;
     clearSelection(false);
     render();
 
+    var spent = commitLocalClock();
+    if (spent && spent.remaining <= 0) {
+      app.busy = false;
+      finishLocalTimeout(spent.color);
+      return;
+    }
+
     ENG.makeMove(app.state.game, move);
+    if (!app.state.game.over) startLocalClock(app.state.game.turn);
 
     app.busy = false;
     render();
@@ -830,7 +930,7 @@
     $('lobbyError').textContent = '';
     setLobbyBusy(true);
 
-    api('/api/create', { name: name })
+    api('/api/create', { name: name, timeControl: app.timeControl })
       .then(function (data) {
         saveName(name);
         startSession({
@@ -948,6 +1048,16 @@
   function applyState(state) {
     if (!state) return;
 
+    if (state.timeControl) app.timeControl = state.timeControl;
+    if (state.clock && typeof state.clock.since !== 'number') {
+      state.clock = {
+        w: state.clock.w,
+        b: state.clock.b,
+        active: state.clock.active,
+        since: state.clock.active ? Date.now() : null
+      };
+    }
+
     var previous = app.state;
     var first = previous === null;
     app.state = state;
@@ -1011,6 +1121,7 @@
 
     renderBoard();
     renderSeats();
+    renderClocks();
     renderStatus();
     renderControls();
     renderOffers();
@@ -1138,6 +1249,45 @@
       connEl.classList.toggle('online', Boolean(data && data.connected));
       connEl.classList.toggle('offline', !(data && data.connected));
     });
+  }
+
+  function renderClocks() {
+    var state = app.state;
+    var clock = state && state.clock;
+    var label = $('timeControlLabel');
+
+    ['w', 'b'].forEach(function (color) {
+      var el = $('clock' + color.toUpperCase());
+      if (!el) return;
+      el.classList.toggle('hidden', !clock);
+      if (!clock) return;
+
+      var value = CLOCK.remaining(clock, color);
+      el.textContent = CLOCK.format(value);
+      el.classList.toggle('low', value <= 30000);
+      el.classList.toggle('active', clock.active === color &&
+        state.status === 'playing' && !state.game.over);
+    });
+
+    if (label) {
+      label.classList.toggle('hidden', !clock);
+      if (clock) label.textContent = 'Blitz · 10 minutes';
+    }
+  }
+
+  function tickClocks() {
+    var state = app.state;
+    if (!state) return;
+
+    if (state.clock && !app.room && state.status === 'playing' && !state.game.over) {
+      var active = state.clock.active;
+      if (active && CLOCK.remaining(state.clock, active) <= 0) {
+        finishLocalTimeout(active);
+        return;
+      }
+    }
+
+    renderClocks();
   }
 
   function renderStatus() {
@@ -1486,8 +1636,20 @@
   function bindEvents() {
     $('createBtn').addEventListener('click', createGame);
     $('joinBtn').addEventListener('click', joinGame);
-    $('singlePlayerBtn').addEventListener('click', startSinglePlayer);
+    $('singlePlayerBtn').addEventListener('click', function () {
+      showTimingScreen('single');
+    });
     $('multiplayerBtn').addEventListener('click', startMultiplayer);
+    $('timingBackBtn').addEventListener('click', showModeScreen);
+    $('normalModeBtn').addEventListener('click', function () {
+      chooseTimeControl('normal');
+    });
+    $('blitzModeBtn').addEventListener('click', function () {
+      chooseTimeControl('blitz');
+    });
+    $('changeTimeBtn').addEventListener('click', function () {
+      showTimingScreen('multi');
+    });
 
     $('difficultySelect').addEventListener('change', function (event) {
       var value = event.target.value;
@@ -1640,6 +1802,8 @@
 
     app.difficulty = readStoredDifficulty();
     $('difficultySelect').value = app.difficulty;
+
+    window.setInterval(tickClocks, 200);
 
     $('nameInput').value = readStoredName();
 

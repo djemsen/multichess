@@ -396,6 +396,66 @@ select:focus {
   max-width: 430px;
 }
 
+.back-btn {
+  align-self: flex-start;
+  padding: 6px 10px;
+  font-size: .8rem;
+  margin-bottom: 4px;
+}
+
+.mode-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.mode-option strong {
+  font-size: .95rem;
+  font-weight: 650;
+}
+
+.mode-option span {
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.mode-option.primary span { color: rgba(7, 19, 11, .72); }
+
+.mode-option.primary:hover:not(:disabled) span { color: #07130b; }
+
+.lobby-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 9px 12px;
+  background: #0d131a;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: .82rem;
+  color: var(--muted);
+}
+
+.link-btn {
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: .78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link-btn:hover:not(:disabled) { background: transparent; color: #6ee7a0; }
+
 /* ---------- Game layout ---------- */
 
 .game {
@@ -626,6 +686,30 @@ select:focus {
 
 .seat-turn { color: var(--accent); font-size: .72rem; }
 
+.seat-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: .82rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--muted);
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #0d131a;
+  border: 1px solid var(--border);
+}
+
+.seat-clock.active {
+  color: var(--text);
+  border-color: rgba(74, 222, 128, .45);
+  background: rgba(74, 222, 128, .09);
+}
+
+.seat-clock.low {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, .5);
+  background: rgba(248, 113, 113, .1);
+}
+
 .seat-conn {
   width: 8px;
   height: 8px;
@@ -636,6 +720,18 @@ select:focus {
 .seat-conn.online {
   background: var(--accent);
   box-shadow: 0 0 7px rgba(74, 222, 128, .6);
+}
+
+.time-control {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
 }
 
 .status {

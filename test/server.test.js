@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createServer } = require('../server.js');
+const { createServer, ROOMS } = require('../server.js');
 
 let server;
 let base;
@@ -403,3 +403,90 @@ test('move bodies must be small valid JSON with room codes', async () => {
   const huge = await post('/api/create', { name: 'x'.repeat(20 * 1024) });
   assert.equal(huge.status, 413);
 });
+
+test('normal rooms have no clock', async () => {
+  const created = await post('/api/create', { name: 'Calm', timeControl: 'normal' });
+  assert.equal(created.status, 201);
+  assert.equal(lastState(created).timeControl, 'normal');
+  assert.equal(lastState(created).clock, null);
+
+  const room = created.data.room;
+  const joined = await post('/api/join', { room, name: 'Slow' });
+  assert.equal(joined.status, 200);
+  assert.equal(lastState(joined).timeControl, 'normal');
+  assert.equal(lastState(joined).clock, null);
+  assert.equal(lastState(joined).status, 'playing');
+});
+
+test('blitz rooms start a server-authoritative ten-minute clock', async () => {
+  const created = await post('/api/create', { name: 'Fast', timeControl: 'blitz' });
+  assert.equal(created.status, 201);
+  assert.equal(lastState(created).timeControl, 'blitz');
+  assert.deepEqual(lastState(created).clock, { w: 600000, b: 600000, active: null });
+
+  const room = created.data.room;
+  const whiteToken = created.data.token;
+  const joined = await post('/api/join', { room, name: 'Faster' });
+  assert.equal(joined.status, 200);
+  const blackToken = joined.data.token;
+
+  const started = lastState(joined);
+  assert.equal(started.status, 'playing');
+  assert.equal(started.clock.active, 'w');
+  assert.ok(started.clock.w <= 600000 && started.clock.w > 595000,
+    'white clock starts near ten minutes');
+  assert.ok(started.clock.b <= 600000 && started.clock.b > 595000,
+    'black clock is untouched');
+
+  // Pretend five seconds passed on White's clock, then make a move.
+  const record = ROOMS.get(room);
+  record.clock.since = Date.now() - 5000;
+
+  const moved = await post('/api/move', {
+    room, token: whiteToken, from: [6, 4], to: [4, 4]
+  });
+  assert.equal(moved.status, 200);
+  const afterMove = lastState(moved);
+  assert.ok(afterMove.clock.w < 596000, 'white spent time on the move');
+  assert.ok(afterMove.clock.b > 595000, 'black clock is still near ten minutes');
+  assert.equal(afterMove.clock.active, 'b');
+
+  // Expiring the side to move ends the game with a timeout result.
+  record.clock.since = Date.now() - 11 * 60 * 1000;
+  const expired = await get('/api/session?room=' + room +
+    '&token=' + encodeURIComponent(blackToken));
+  assert.equal(expired.status, 200);
+  assert.equal(lastState(expired).status, 'over');
+  assert.equal(lastState(expired).game.over, true);
+  assert.equal(lastState(expired).clock.active, null);
+  assert.equal(lastState(expired).clock.b, 0);
+  assert.match(lastState(expired).game.result, /White wins — Black ran out of time/);
+
+  const lateMove = await post('/api/move', {
+    room, token: whiteToken, from: [4, 4], to: [3, 4]
+  });
+  assert.equal(lateMove.status, 409);
+  assert.match(lateMove.data.error, /not in progress|time ran out/i);
+
+  // Rematch resets both clocks and restarts White's clock.
+  await post('/api/action', { room, token: whiteToken, action: 'rematch' });
+  const rematch = await post('/api/action', { room, token: blackToken, action: 'rematch' });
+  assert.equal(rematch.status, 200);
+  const reset = lastState(rematch);
+  assert.equal(reset.status, 'playing');
+  assert.equal(reset.clock.active, 'w');
+  assert.ok(reset.clock.w <= 600000 && reset.clock.w > 595000);
+  assert.ok(reset.clock.b <= 600000 && reset.clock.b > 595000);
+});
+
+test('joiners inherit the room time control', async () => {
+  const created = await post('/api/create', { name: 'Host', timeControl: 'blitz' });
+  const room = created.data.room;
+  const joined = await post('/api/join', {
+    room, name: 'Guest', timeControl: 'normal'
+  });
+  assert.equal(joined.status, 200);
+  assert.equal(lastState(joined).timeControl, 'blitz');
+  assert.equal(lastState(joined).clock.active, 'w');
+});
+

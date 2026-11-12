@@ -6,6 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const chess = require('./public/engine.js');
+const ChessClock = require('./public/clock.js');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const ROOMS = new Map();
@@ -14,6 +15,7 @@ const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_CHAT_LENGTH = 300;
 const MAX_CHAT_HISTORY = 100;
+const BLITZ_MS = ChessClock.DEFAULT_MS;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -43,8 +45,9 @@ function newRoomCode() {
   return code;
 }
 
-function createRoom(whiteName) {
+function createRoom(whiteName, timeControl) {
   const code = newRoomCode();
+  const mode = timeControl === 'blitz' ? 'blitz' : 'normal';
   const room = {
     code,
     game: chess.createGame(),
@@ -55,6 +58,9 @@ function createRoom(whiteName) {
     connected: { w: false, b: false },
     streams: { w: new Set(), b: new Set() },
     status: 'waiting',
+    timeControl: mode,
+    clock: mode === 'blitz' ? ChessClock.create(BLITZ_MS) : null,
+    clockTimer: null,
     drawOffer: null,
     rematch: new Set(),
     chat: [],
@@ -64,6 +70,64 @@ function createRoom(whiteName) {
   };
   ROOMS.set(code, room);
   return room;
+}
+
+function startClock(room, color) {
+  if (!room.clock) return;
+  ChessClock.start(room.clock, color);
+  scheduleClock(room);
+}
+
+function stopClock(room) {
+  clearTimeout(room.clockTimer);
+  room.clockTimer = null;
+  if (room.clock) ChessClock.commit(room.clock);
+}
+
+function scheduleClock(room) {
+  clearTimeout(room.clockTimer);
+  room.clockTimer = null;
+
+  if (!room.clock || !room.clock.active) return;
+  if (room.status !== 'playing' || room.game.over) return;
+
+  const delay = Math.max(0, ChessClock.remaining(room.clock, room.clock.active));
+  room.clockTimer = setTimeout(() => {
+    room.clockTimer = null;
+    if (!ROOMS.has(room.code)) return;
+    if (finishOnTime(room)) broadcast(room);
+  }, delay);
+
+  if (typeof room.clockTimer.unref === 'function') room.clockTimer.unref();
+}
+
+function finishOnTime(room, loser) {
+  if (!room.clock) return false;
+  const color = loser || room.clock.active;
+  if (color !== 'w' && color !== 'b') return false;
+
+  const winner = color === 'w' ? 'b' : 'w';
+  room.clock[color] = 0;
+  room.clock.active = null;
+  room.clock.since = null;
+  clearTimeout(room.clockTimer);
+  room.clockTimer = null;
+
+  room.game.over = true;
+  room.status = 'over';
+  room.game.result = chess.colorName(winner) + ' wins — ' +
+    chess.colorName(color) + ' ran out of time';
+  room.drawOffer = null;
+  room.rematch.clear();
+  room.lastActivity = Date.now();
+  return true;
+}
+
+function checkClock(room) {
+  if (!room.clock || !room.clock.active) return false;
+  if (room.status !== 'playing' || room.game.over) return false;
+  if (ChessClock.remaining(room.clock, room.clock.active) > 0) return false;
+  return finishOnTime(room);
 }
 
 function seatColorForToken(room, token) {
@@ -86,6 +150,8 @@ function snapshot(room) {
         : null
     },
     game: room.game,
+    timeControl: room.timeControl,
+    clock: ChessClock.snapshot(room.clock),
     offers: {
       draw: room.drawOffer,
       rematch: Array.from(room.rematch)
@@ -118,6 +184,11 @@ function resetGame(room) {
   room.drawOffer = null;
   room.rematch.clear();
   room.lastActivity = Date.now();
+
+  if (room.clock) {
+    room.clock = ChessClock.create(BLITZ_MS);
+    startClock(room, 'w');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +340,7 @@ function serveStatic(res, pathname) {
 async function handleCreate(req, res) {
   const body = await readJsonBody(req);
   const name = cleanName(body.name, 'White');
-  const room = createRoom(name);
+  const room = createRoom(name, body.timeControl);
 
   sendJson(res, 201, {
     ok: true,
@@ -303,6 +374,7 @@ async function handleJoin(req, res) {
   room.seats.b = { token: newToken(), name };
   room.status = 'playing';
   room.lastActivity = Date.now();
+  startClock(room, 'w');
   broadcast(room);
 
   sendJson(res, 200, {
@@ -328,6 +400,11 @@ async function handleMove(req, res) {
     sendError(res, 403, 'You are not a player in this room.');
     return;
   }
+  if (checkClock(room)) {
+    broadcast(room);
+    sendError(res, 409, 'Time ran out.');
+    return;
+  }
   if (room.status !== 'playing' || room.game.over) {
     sendError(res, 409, 'The game is not in progress.');
     return;
@@ -348,11 +425,25 @@ async function handleMove(req, res) {
     return;
   }
 
+  clearTimeout(room.clockTimer);
+  room.clockTimer = null;
+  const spent = room.clock ? ChessClock.commit(room.clock) : null;
+  if (spent && spent.remaining <= 0) {
+    finishOnTime(room, spent.color);
+    broadcast(room);
+    sendError(res, 409, 'Time ran out.');
+    return;
+  }
+
   chess.makeMove(room.game, move);
   room.drawOffer = null;
   room.rematch.clear();
   room.lastActivity = Date.now();
-  if (room.game.over) room.status = 'over';
+  if (room.game.over) {
+    room.status = 'over';
+  } else {
+    startClock(room, room.game.turn);
+  }
 
   broadcast(room);
   sendJson(res, 200, { ok: true, state: snapshot(room) });
@@ -372,6 +463,8 @@ async function handleAction(req, res) {
     return;
   }
 
+  if (checkClock(room)) broadcast(room);
+
   const opponent = color === 'w' ? 'b' : 'w';
   const action = body.action;
 
@@ -386,6 +479,7 @@ async function handleAction(req, res) {
       chess.colorName(color) + ' resigned';
     room.drawOffer = null;
     room.rematch.clear();
+    stopClock(room);
   } else if (action === 'offer-draw') {
     if (room.status !== 'playing' || room.game.over) {
       sendError(res, 409, 'The game is not in progress.');
@@ -406,6 +500,7 @@ async function handleAction(req, res) {
       room.status = 'over';
       room.game.result = 'Draw — agreed';
       room.rematch.clear();
+      stopClock(room);
     }
     room.drawOffer = null;
   } else if (action === 'rematch') {
@@ -458,11 +553,14 @@ async function handleAction(req, res) {
       room.status = 'over';
       room.game.result = chess.colorName(opponent) + ' wins — opponent left';
       room.drawOffer = null;
+      stopClock(room);
     }
 
     room.lastActivity = Date.now();
 
     if (!room.seats.w && !room.seats.b) {
+      clearTimeout(room.clockTimer);
+      room.clockTimer = null;
       ROOMS.delete(room.code);
       sendJson(res, 200, { ok: true, state: null });
       return;
@@ -491,6 +589,8 @@ function handleSession(res, url) {
     return;
   }
 
+  checkClock(room);
+
   const seat = room.seats[color];
   sendJson(res, 200, {
     ok: true,
@@ -510,6 +610,8 @@ function handleEvents(req, res, url) {
     sendText(res, 403, 'Forbidden');
     return;
   }
+
+  checkClock(room);
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -687,6 +789,8 @@ function start() {
     for (const [code, room] of ROOMS) {
       const connected = room.connected.w || room.connected.b;
       if (!connected && now - room.lastActivity > ROOM_TTL_MS) {
+        clearTimeout(room.clockTimer);
+        room.clockTimer = null;
         ROOMS.delete(code);
       }
     }

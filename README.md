@@ -11,7 +11,8 @@ accounts, no internet matchmaking, and no npm dependencies.
 
 - Two-player LAN games with room codes and invite links.
 - Single-player games with **Easy**, **Medium**, and **Hard** computer levels.
-- Server-authoritative rules, live SSE updates, and automatic reconnects.
+- **Normal** games with no clock and **Blitz** games with ten minutes per player.
+- Server-authoritative rules and clocks, live SSE updates, and automatic reconnects.
 - Real-time chat, draw offers, resignation, and rematches.
 - Generated move/chat sounds and ambient music — no audio files.
 - Zero npm dependencies; Node.js 18+ is all you need.
@@ -77,9 +78,29 @@ computer. Pick a difficulty first:
 The choice is remembered in `localStorage` and is shown next to the computer's
 name in the player panel.
 
+After choosing single-player, pick a time control:
+
+- **Normal** — no clock; take as long as you like.
+- **Blitz** — ten minutes per player; the clock runs only on the side to move.
+
+### Time controls
+
+Every new game starts with a time-control choice:
+
+- **Normal** has no clock and games can last as long as they need.
+- **Blitz** gives each player **10 minutes**. White's clock starts when the game
+  begins and each player's clock runs only on their turn. A player whose time
+  reaches zero loses immediately.
+
+In multiplayer the server owns the clock, so both players see the same time and
+timeouts are enforced even if a browser is closed. Rematches reset both clocks
+to 10:00. The player who creates the room chooses the time control; anyone who
+joins inherits it.
+
 ### Online
 
-1. On the host machine, open the Network address and click **Create a game**.
+1. On the host machine, open the Network address and choose **Play Multiplayer**,
+   then pick **Normal** or **Blitz**.
    You are **White**.
 2. Share the 5-character room code or the invite link with the other player.
    The second machine opens the same address, enters the code, and clicks
@@ -109,6 +130,7 @@ it in `localStorage` instead.
 - Check, checkmate, and stalemate detection.
 - Standard algebraic notation (SAN) move history.
 - Draw offers, resignation, and rematches. Colors stay fixed on rematch.
+- Optional Blitz clocks: ten minutes per player, server-timed in online games.
 - In-game chat with the opponent, including after the game ends.
 - Move, capture, check, checkmate, and chat sounds with separate game-sound and
   background-music toggles.
@@ -158,6 +180,9 @@ browser B ── POST /api/move ──┘          │
   action is validated against the shared rules engine before it is applied.
 - `public/engine.js` is a UMD module loaded by both the server (`require`) and
   the browser (`window.ChessEngine`), so hints and enforcement cannot drift.
+- `public/clock.js` is a second shared UMD module for Blitz clock math and
+  `m:ss` formatting; the server uses it as the authority and the browser uses it
+  to count down smoothly between updates.
 - Updates are pushed with **Server-Sent Events** (`GET /api/events`); actions
   use small JSON `POST` requests. No WebSocket library is needed.
 - Rooms live in memory and are deleted when empty or after 6 hours of inactivity
@@ -167,7 +192,7 @@ browser B ── POST /api/move ──┘          │
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/create` | Create a room; returns room code, player token, White seat |
+| `POST` | `/api/create` | Create a room; body may include `timeControl` (`normal`/`blitz`); returns room code, player token, White seat |
 | `POST` | `/api/join` | Join a waiting room as Black |
 | `POST` | `/api/move` | Submit `{room, token, from, to, promo}` |
 | `POST` | `/api/action` | `resign`, `offer-draw`, `respond-draw`, `rematch`, `chat`, `leave` |
@@ -187,9 +212,11 @@ multichess/
 │   ├── index.html         lobby, board, player panel, modals
 │   ├── style.css          dark responsive theme
 │   ├── engine.js          shared chess rules (server + browser)
+│   ├── clock.js           shared Blitz clock math and formatting
 │   └── app.js             session, SSE, board rendering, chat, actions, sound
 └── test/
     ├── engine.test.js     rules, SAN, castling, en passant, promotion
+    ├── clock.test.js      clock countdown, commit, snapshot, formatting
     └── server.test.js     HTTP API, SSE, draw/resign/rematch, reconnect
 ```
 
@@ -206,7 +233,7 @@ test runner. No packages are installed.
 ## Limitations
 
 - LAN/local-network play only; there is no internet matchmaking or relay.
-- No clocks, undo, spectators, or persistent history.
+- No undo, spectators, or persistent history.
 - The computer opponent is a small built-in search engine, not a strong chess
   engine.
 - Traffic is plain HTTP. The room code and player tokens are not encrypted; use

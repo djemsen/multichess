@@ -73,10 +73,33 @@
     </div>
   </section>
 
+  <section id="timingScreen" class="mode-screen hidden">
+    <div class="lobby-card">
+      <button id="timingBackBtn" class="ghost back-btn" type="button">&larr; Back</button>
+      <h2 id="timingTitle">Single player</h2>
+      <p id="timingSub" class="lobby-sub">Choose a time control.</p>
+
+      <button id="normalModeBtn" class="mode-option wide" type="button">
+        <strong>Normal</strong>
+        <span>No clock &mdash; take your time</span>
+      </button>
+
+      <button id="blitzModeBtn" class="mode-option primary wide" type="button">
+        <strong>Blitz &middot; 10 minutes</strong>
+        <span>Each player gets ten minutes</span>
+      </button>
+    </div>
+  </section>
+
   <section id="lobby" class="lobby">
     <div class="lobby-card">
       <h2>Start a game</h2>
       <p class="lobby-sub">Create a room, then share the code or link with the other player.</p>
+
+      <div class="lobby-mode">
+        <span id="lobbyTimeControl">Normal &middot; No clock</span>
+        <button id="changeTimeBtn" class="link-btn" type="button">Change</button>
+      </div>
 
       <label class="field">
         <span>Your name</span>
@@ -129,6 +152,7 @@
           <span class="seat-name">White</span>
           <span class="seat-you hidden">you</span>
           <span class="seat-tail">
+            <span id="clockW" class="seat-clock hidden">10:00</span>
             <span class="seat-turn hidden" title="To move">&#9679;</span>
             <span class="seat-conn offline" aria-hidden="true"></span>
           </span>
@@ -138,11 +162,14 @@
           <span class="seat-name">Black</span>
           <span class="seat-you hidden">you</span>
           <span class="seat-tail">
+            <span id="clockB" class="seat-clock hidden">10:00</span>
             <span class="seat-turn hidden" title="To move">&#9679;</span>
             <span class="seat-conn offline" aria-hidden="true"></span>
           </span>
         </div>
       </div>
+
+      <div id="timeControlLabel" class="time-control hidden">Blitz &middot; 10 minutes</div>
 
       <div id="status" class="status">Connecting&hellip;</div>
 
@@ -202,6 +229,7 @@
 <div id="toast" class="toast hidden" role="status"></div>
 
 <script src="engine.js"></script>
+<script src="clock.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
