@@ -41,6 +41,12 @@
           <path class="eval-slash" d="m4 4 16 16"/>
         </svg>
       </button>
+      <button id="prefsBtn" class="icon-btn" type="button" aria-pressed="false" aria-label="Board preferences" title="Board preferences">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
       <button id="roomBadge" class="room-badge hidden" type="button" title="Copy invite link">
         <span id="connDot" class="conn-dot offline" aria-hidden="true"></span>
         <span>Room <strong id="roomBadgeCode">-----</strong></span>
@@ -194,6 +200,7 @@
       </div>
 
       <div class="controls">
+        <button id="undoBtn" class="hidden" type="button">Undo</button>
         <button id="drawBtn" type="button">Offer draw</button>
         <button id="resignBtn" type="button">Resign</button>
         <button id="flipBtn" type="button">Flip</button>
@@ -238,7 +245,33 @@
   </div>
 </div>
 
+<div id="prefsModal" class="overlay hidden">
+  <div class="modal prefs-modal">
+    <h2>Board preferences</h2>
+    <div class="prefs-list">
+      <label class="pref">
+        <input id="prefLastMove" type="checkbox" checked>
+        <span>Highlight last move</span>
+      </label>
+      <label class="pref">
+        <input id="prefCoords" type="checkbox" checked>
+        <span>Show board coordinates</span>
+      </label>
+      <label class="pref">
+        <input id="prefHints" type="checkbox" checked>
+        <span>Show legal move hints</span>
+      </label>
+      <label class="pref">
+        <input id="prefAutoFlip" type="checkbox" checked>
+        <span>Auto-flip to my side</span>
+      </label>
+    </div>
+    <button id="prefsCloseBtn" class="primary wide" type="button">Done</button>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden" role="status"></div>
+<div id="dragGhost" class="drag-ghost hidden" aria-hidden="true"></div>
 
 <script src="engine.js"></script>
 <script src="clock.js"></script>

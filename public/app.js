@@ -9,6 +9,7 @@
   var NAME_KEY = 'multichess.name';
   var DIFFICULTY_KEY = 'multichess.difficulty';
   var EVAL_KEY = 'multichess.eval';
+  var PREFS_KEY = 'multichess.prefs';
   var DIFFICULTIES = {
     easy: { label: 'Easy', depth: 0, random: true },
     medium: { label: 'Medium', depth: 1, random: false },
@@ -30,6 +31,12 @@
     evalEnabled: true,
     evalBridge: null,
     evalScore: null,
+    prefs: { lastMove: true, coords: true, hints: true, autoFlip: true },
+    history: [],
+    drag: null,
+    suppressClick: false,
+    lastTurn: null,
+    lastLowWarn: 0,
     state: null,
     selected: null,
     legal: [],
@@ -160,6 +167,30 @@
       else if (san.indexOf('+') !== -1) play('check');
       else if (san.indexOf('x') !== -1) play('capture');
       else play('move');
+    }
+
+    function playNotify() {
+      try {
+        if (effectsMuted) return;
+        if (!context()) return;
+        var now = audio.currentTime + 0.01;
+        tone(660, now, 0.08, 0.05, 'sine');
+        tone(880, now + 0.08, 0.12, 0.045, 'sine');
+      } catch (err) {
+        // Sound is optional; never let audio break the game.
+      }
+    }
+
+    function playWarn() {
+      try {
+        if (effectsMuted) return;
+        if (!context()) return;
+        var now = audio.currentTime + 0.01;
+        tone(520, now, 0.1, 0.06, 'square');
+        tone(520, now + 0.16, 0.1, 0.06, 'square');
+      } catch (err) {
+        // Sound is optional; never let audio break the game.
+      }
     }
 
     function playChat(ownMessage) {
@@ -377,6 +408,8 @@
     return {
       playForSan: playForSan,
       playChat: playChat,
+      playNotify: playNotify,
+      playWarn: playWarn,
       toggle: toggle,
       toggleMusic: toggleMusic,
       setMusicActive: setMusicActive,
@@ -486,6 +519,32 @@
   function saveStoredEval(enabled) {
     try {
       localStorage.setItem(EVAL_KEY, enabled ? '1' : '0');
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  function readStoredPrefs() {
+    var defaults = { lastMove: true, coords: true, hints: true, autoFlip: true };
+    try {
+      var raw = localStorage.getItem(PREFS_KEY);
+      if (!raw) return defaults;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return defaults;
+      return {
+        lastMove: parsed.lastMove !== false,
+        coords: parsed.coords !== false,
+        hints: parsed.hints !== false,
+        autoFlip: parsed.autoFlip !== false
+      };
+    } catch (err) {
+      return defaults;
+    }
+  }
+
+  function saveStoredPrefs(prefs) {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch (err) {
       // ignore
     }
@@ -693,6 +752,7 @@
     app.token = null;
     app.color = 'w';
     app.name = name;
+    app.history = [];
     app.state = {
       room: null,
       status: 'playing',
@@ -789,6 +849,47 @@
     return copy;
   }
 
+  function snapshotLocal() {
+    var state = app.state;
+    if (!state) return null;
+    return {
+      game: cloneLocalGame(state.game),
+      clock: state.clock ? CLOCK.snapshot(state.clock) : null
+    };
+  }
+
+  function restoreLocal(snapshot) {
+    var state = app.state;
+    if (!state || !snapshot) return;
+
+    state.game = snapshot.game;
+    state.status = 'playing';
+
+    if (state.clock && snapshot.clock) {
+      state.clock.w = snapshot.clock.w;
+      state.clock.b = snapshot.clock.b;
+      state.clock.active = snapshot.clock.active;
+      state.clock.since = snapshot.clock.active ? Date.now() : null;
+    }
+
+    app.selected = null;
+    app.legal = [];
+    app.busy = false;
+    app.promoMoves = null;
+    app.animKey = null;
+    app.lastLowWarn = 0;
+
+    render();
+    triggerEvaluation(state.game);
+    syncMusic();
+  }
+
+  function undoMove() {
+    if (app.room) return;
+    if (!app.history.length) return;
+    restoreLocal(app.history.pop());
+  }
+
   function evaluateBoard(board) {
     var values = { P: 100, N: 320, B: 330, R: 500, Q: 900, K: 0 };
     var score = 0;
@@ -867,6 +968,7 @@
 
     function applyAIMove(move) {
       if (!move) return;
+      if (app.state.game !== game) return;
       app.busy = true;
       render();
 
@@ -884,6 +986,8 @@
       app.busy = false;
       render();
       triggerEvaluation(game);
+      if (!game.over && game.turn === app.color) sound.playNotify();
+      updateTabTitle();
     }
 
     var depths = { easy: 1, medium: 4, hard: 8 };
@@ -917,6 +1021,8 @@
       return;
     }
 
+    app.history.push(snapshotLocal());
+
     app.busy = true;
     clearSelection(false);
     render();
@@ -935,6 +1041,7 @@
     app.busy = false;
     render();
     triggerEvaluation(app.state.game);
+    updateTabTitle();
 
     var game = app.state.game;
     if (!game.over && game.turn !== app.color) {
@@ -1119,7 +1226,7 @@
       app.legal = [];
     }
 
-    if (!app.manualFlip && state.status === 'playing' && !state.game.over && state.game.turn === app.color) {
+    if (app.prefs.autoFlip && !app.manualFlip && state.status === 'playing' && !state.game.over && state.game.turn === app.color) {
       app.flipped = app.color === 'b';
     }
 
@@ -1145,6 +1252,27 @@
     }
 
     syncMusic();
+    notifyTurnChange(previous, state);
+  }
+
+  function updateTabTitle() {
+    var state = app.state;
+    var base = 'MultiChess — local network chess';
+    if (!state) { document.title = base; return; }
+    if (state.status === 'playing' && !state.game.over && state.game.turn === app.color) {
+      document.title = '● Your move — MultiChess';
+    } else {
+      document.title = base;
+    }
+  }
+
+  function notifyTurnChange(previous, state) {
+    if (!previous || previous.room !== state.room) return;
+    var wasMyTurn = previous.game.turn === app.color;
+    var isMyTurn = state.game.turn === app.color;
+    if (!wasMyTurn && isMyTurn && state.status === 'playing' && !state.game.over) {
+      sound.playNotify();
+    }
   }
 
   function refreshFromServer() {
@@ -1176,6 +1304,7 @@
     renderOffers();
     renderChat();
     renderLog();
+    updateTabTitle();
 
     $('waiting').classList.toggle('hidden', state.status !== 'waiting');
   }
@@ -1196,7 +1325,7 @@
         cell.dataset.r = String(r);
         cell.dataset.c = String(c);
 
-        if (game.lastMove) {
+        if (app.prefs.lastMove && game.lastMove) {
           var from = game.lastMove.from;
           var to = game.lastMove.to;
           if ((from[0] === r && from[1] === c) || (to[0] === r && to[1] === c)) {
@@ -1214,7 +1343,7 @@
           cell.classList.add('check');
         }
 
-        var isTarget = app.legal.some(function (move) {
+        var isTarget = app.prefs.hints && app.legal.some(function (move) {
           return move.to[0] === r && move.to[1] === c;
         });
         if (isTarget) cell.classList.add(piece ? 'capture-hint' : 'move-hint');
@@ -1226,14 +1355,14 @@
           cell.appendChild(span);
         }
 
-        if (displayRow === 7) {
+        if (app.prefs.coords && displayRow === 7) {
           var fileLabel = document.createElement('span');
           fileLabel.className = 'coord file';
           fileLabel.textContent = ENG.FILES[c];
           cell.appendChild(fileLabel);
         }
 
-        if (displayCol === 0) {
+        if (app.prefs.coords && displayCol === 0) {
           var rankLabel = document.createElement('span');
           rankLabel.className = 'coord rank';
           rankLabel.textContent = String(8 - r);
@@ -1336,7 +1465,40 @@
       }
     }
 
+    if (state.clock && state.status === 'playing' && !state.game.over && state.clock.active) {
+      var remaining = CLOCK.remaining(state.clock, state.clock.active);
+      if (remaining > 30000) {
+        app.lastLowWarn = 0;
+      } else if (remaining <= 30000 && remaining > 0) {
+        var bucket = remaining <= 10000 ? 10 : 30;
+        if (app.lastLowWarn !== bucket) {
+          app.lastLowWarn = bucket;
+          sound.playWarn();
+        }
+      }
+    }
+
     renderClocks();
+  }
+
+  function openPrefs() {
+    $('prefLastMove').checked = app.prefs.lastMove;
+    $('prefCoords').checked = app.prefs.coords;
+    $('prefHints').checked = app.prefs.hints;
+    $('prefAutoFlip').checked = app.prefs.autoFlip;
+    $('prefsModal').classList.remove('hidden');
+  }
+
+  function closePrefs() {
+    $('prefsModal').classList.add('hidden');
+  }
+
+  function bindPref(id, key) {
+    $(id).addEventListener('change', function (event) {
+      app.prefs[key] = event.target.checked;
+      saveStoredPrefs(app.prefs);
+      render();
+    });
   }
 
   function updateEvalButton() {
@@ -1476,9 +1638,13 @@
       $('drawBtn').disabled = true;
       $('resignBtn').disabled = true;
       $('rematchBtn').classList.add('hidden');
+      var undoBtn = $('undoBtn');
+      undoBtn.classList.remove('hidden');
+      undoBtn.disabled = app.busy || app.history.length === 0;
       return;
     }
 
+    $('undoBtn').classList.add('hidden');
     $('drawBtn').disabled = !playing || Boolean(drawOffer);
     setText($('drawBtn'), drawOffer === app.color ? 'Draw offered' : 'Offer draw');
 
@@ -1602,7 +1768,10 @@
       return;
     }
 
+    var nearBottom = movesEl.scrollHeight - movesEl.scrollTop - movesEl.clientHeight < 48;
+    var lastIndex = log.length - 1;
     var rows = [];
+
     for (var i = 0; i < log.length; i += 2) {
       var white = log[i];
       var black = log[i + 1];
@@ -1615,11 +1784,12 @@
       num.textContent = String(i / 2 + 1) + '.';
 
       var w = document.createElement('span');
-      w.className = 'san';
+      w.className = 'san' + (i === lastIndex ? ' current' : '');
       w.textContent = white ? white.san : '';
 
       var b = document.createElement('span');
-      b.className = 'san' + (black ? '' : ' dim');
+      var blackIsLast = i + 1 === lastIndex;
+      b.className = 'san' + (black ? (blackIsLast ? ' current' : '') : ' dim');
       b.textContent = black ? black.san : '—';
 
       row.append(num, w, b);
@@ -1627,7 +1797,7 @@
     }
 
     movesEl.replaceChildren.apply(movesEl, rows);
-    movesEl.scrollTop = movesEl.scrollHeight;
+    if (nearBottom) movesEl.scrollTop = movesEl.scrollHeight;
   }
 
   // -------------------------------------------------------------------------
@@ -1804,6 +1974,17 @@
 
     $('evalBtn').addEventListener('click', toggleEval);
 
+    $('prefsBtn').addEventListener('click', openPrefs);
+    $('prefsCloseBtn').addEventListener('click', closePrefs);
+    $('prefsModal').addEventListener('click', function (event) {
+      if (event.target === $('prefsModal')) closePrefs();
+    });
+    bindPref('prefLastMove', 'lastMove');
+    bindPref('prefCoords', 'coords');
+    bindPref('prefHints', 'hints');
+    bindPref('prefAutoFlip', 'autoFlip');
+    $('undoBtn').addEventListener('click', undoMove);
+
     $('musicBtn').addEventListener('click', function () {
       sound.toggleMusic();
       syncMusic();
@@ -1887,6 +2068,7 @@
     });
 
     $('board').addEventListener('click', function (event) {
+      if (app.suppressClick) { app.suppressClick = false; return; }
       if (!canInteract()) return;
 
       var cell = event.target.closest('.cell');
@@ -1921,6 +2103,98 @@
       }
     });
 
+    // Drag-and-drop pieces (in addition to click-to-move).
+    var boardEl = $('board');
+
+    function cellFromPoint(x, y) {
+      var el = document.elementFromPoint(x, y);
+      if (!el || !el.closest) return null;
+      var cell = el.closest('.cell');
+      if (!cell || !boardEl.contains(cell)) return null;
+      return { r: Number(cell.dataset.r), c: Number(cell.dataset.c) };
+    }
+
+    function clearDragGhost() {
+      var ghost = $('dragGhost');
+      ghost.classList.add('hidden');
+      ghost.className = 'drag-ghost hidden';
+    }
+
+    boardEl.addEventListener('pointerdown', function (event) {
+      if (!canInteract()) return;
+      var cell = event.target.closest ? event.target.closest('.cell') : null;
+      if (!cell) return;
+
+      var r = Number(cell.dataset.r);
+      var c = Number(cell.dataset.c);
+      var piece = app.state.game.board[r][c];
+      if (!piece || piece[0] !== app.color) return;
+
+      // If this square is already a legal target, let click-to-move handle it.
+      var isTarget = app.selected && app.legal.some(function (m) {
+        return m.to[0] === r && m.to[1] === c;
+      });
+      if (isTarget) return;
+
+      app.drag = { r: r, c: c, x: event.clientX, y: event.clientY, moved: false };
+    });
+
+    window.addEventListener('pointermove', function (event) {
+      if (!app.drag) return;
+      var dx = event.clientX - app.drag.x;
+      var dy = event.clientY - app.drag.y;
+
+      if (!app.drag.moved && dx * dx + dy * dy > 36) {
+        app.drag.moved = true;
+        selectSquare(app.drag.r, app.drag.c);
+
+        var piece = app.state.game.board[app.drag.r][app.drag.c];
+        var ghost = $('dragGhost');
+        ghost.className = 'drag-ghost piece ' + (piece ? piece[0] : '');
+        ghost.textContent = piece ? GLYPHS[piece[1]] : '';
+        ghost.classList.remove('hidden');
+
+        var src = boardEl.querySelector('.cell[data-r="' + app.drag.r + '"][data-c="' + app.drag.c + '"]');
+        if (src) src.classList.add('dragging-src');
+      }
+
+      if (!app.drag.moved) return;
+      event.preventDefault();
+      var ghostEl = $('dragGhost');
+      ghostEl.style.left = event.clientX + 'px';
+      ghostEl.style.top = event.clientY + 'px';
+    }, { passive: false });
+
+    function finishDrag(event, cancelled) {
+      if (!app.drag) return;
+      var drag = app.drag;
+      app.drag = null;
+      clearDragGhost();
+
+      var src = boardEl.querySelector('.cell[data-r="' + drag.r + '"][data-c="' + drag.c + '"]');
+      if (src) src.classList.remove('dragging-src');
+
+      if (!drag.moved) return; // treated as a click by the click handler
+
+      app.suppressClick = true;
+      setTimeout(function () { app.suppressClick = false; }, 0);
+
+      if (cancelled) { clearSelection(); return; }
+
+      var target = cellFromPoint(event.clientX, event.clientY);
+      if (!target || (target.r === drag.r && target.c === drag.c)) { clearSelection(); return; }
+
+      var candidates = app.legal.filter(function (m) {
+        return m.to[0] === target.r && m.to[1] === target.c;
+      });
+      if (!candidates.length) { clearSelection(); return; }
+      if (candidates[0].promo) showPromotion(candidates);
+      else sendMove(candidates[0]);
+    }
+
+    window.addEventListener('pointerup', function (event) { finishDrag(event, false); });
+    window.addEventListener('pointercancel', function (event) { finishDrag(event, true); });
+
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && app.promoMoves) {
         hidePromotion();
@@ -1943,6 +2217,7 @@
     $('musicVolume').value = String(Math.round(sound.getMusicVolume() * 100));
 
     app.evalEnabled = readStoredEval();
+    app.prefs = readStoredPrefs();
     if (EVAL && typeof EVAL.createBridge === 'function') {
       app.evalBridge = EVAL.createBridge('lozza.js');
       app.evalBridge.init();

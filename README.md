@@ -13,6 +13,10 @@ accounts, no internet matchmaking, and no npm dependencies.
 - Single-player games with **Easy**, **Medium**, and **Hard** computer levels.
 - **Normal** games with no clock and **Blitz** games with ten minutes per player.
 - Live **Evaluation Bar** alongside the board, powered by the open-source **Lozza 11** UCI engine in a Web Worker.
+- **Drag-and-drop** and click-to-move piece controls with origin highlights and ghost pieces.
+- **Takeback / Undo** in single player against the computer.
+- **Turn and low-time notifications** with audio chimes, clock warnings, and tab title status.
+- **Board preferences** (toggle coordinates, move hints, last-move highlights, auto-flip) saved to `localStorage`.
 - Server-authoritative rules and clocks, live SSE updates, and automatic reconnects.
 - Real-time chat, draw offers, resignation, and rematches.
 - Generated move/chat sounds and ambient music — no audio files.
@@ -245,7 +249,7 @@ test runner. No packages are installed.
 ## Limitations
 
 - LAN/local-network play only; there is no internet matchmaking or relay.
-- No undo, spectators, or persistent history.
+- No online spectators or persistent cross-session history (single-player supports move takeback).
 - The AI engine runs client-side in browser Web Workers; search depth is scaled for web responsiveness rather than grandmaster time controls.
 - Traffic is plain HTTP. The room code and player tokens are not encrypted; use
   it on a trusted home network, not on public Wi-Fi.
