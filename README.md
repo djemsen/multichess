@@ -13,6 +13,7 @@ accounts, no internet matchmaking, and no npm dependencies.
 - Single-player games with **Easy**, **Medium**, and **Hard** computer levels.
 - **Normal** games with no clock and **Blitz** games with ten minutes per player.
 - Live **Evaluation Bar** alongside the board, powered by the open-source **Lozza 11** UCI engine in a Web Worker.
+- **Captured pieces display** and live material advantage tally (`+1`, `+3`, etc.) next to each player.
 - **Drag-and-drop** and click-to-move piece controls with origin highlights and ghost pieces.
 - **Takeback / Undo** in single player against the computer.
 - **Turn and low-time notifications** with audio chimes, clock warnings, and tab title status.

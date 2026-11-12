@@ -181,3 +181,28 @@ test('toFEN converts board state to standard FEN', () => {
   play(game, [1, 2], [3, 2]); // 1... c5
   assert.equal(chess.toFEN(game), 'rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2');
 });
+
+test('getCaptured calculates captured pieces and material difference', () => {
+  const game = chess.createGame();
+  assert.deepEqual(chess.getCaptured(game.board), {
+    w: { pieces: [], diff: 0 },
+    b: { pieces: [], diff: 0 }
+  });
+
+  // 1. e4 d5 2. exd5 (White captures black pawn)
+  play(game, [6, 4], [4, 4]);
+  play(game, [1, 3], [3, 3]);
+  play(game, [4, 4], [3, 3]);
+
+  const afterPawn = chess.getCaptured(game.board);
+  assert.deepEqual(afterPawn.w, { pieces: [{ color: 'b', type: 'P' }], diff: 1 });
+  assert.deepEqual(afterPawn.b, { pieces: [], diff: 0 });
+
+  // 2... Qxd5 (Black captures white pawn)
+  play(game, [0, 3], [3, 3]);
+  const afterQueenTake = chess.getCaptured(game.board);
+  assert.deepEqual(afterQueenTake.w.pieces, [{ color: 'b', type: 'P' }]);
+  assert.deepEqual(afterQueenTake.b.pieces, [{ color: 'w', type: 'P' }]);
+  assert.equal(afterQueenTake.w.diff, 0);
+  assert.equal(afterQueenTake.b.diff, 0);
+});

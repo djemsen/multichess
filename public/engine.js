@@ -433,6 +433,58 @@
     return null;
   }
 
+  var START_PIECES = {
+    w: { P: 8, N: 2, B: 2, R: 2, Q: 1 },
+    b: { P: 8, N: 2, B: 2, R: 2, Q: 1 }
+  };
+  var PIECE_VALUES = { P: 1, N: 3, B: 3, R: 5, Q: 9 };
+  var PIECE_ORDER = ['Q', 'R', 'B', 'N', 'P'];
+
+  function getCaptured(board) {
+    var counts = {
+      w: { P: 0, N: 0, B: 0, R: 0, Q: 0 },
+      b: { P: 0, N: 0, B: 0, R: 0, Q: 0 }
+    };
+    if (Array.isArray(board)) {
+      for (var r = 0; r < 8; r++) {
+        for (var c = 0; c < 8; c++) {
+          var p = board[r][c];
+          if (p && p[1] !== 'K' && counts[p[0]] && typeof counts[p[0]][p[1]] === 'number') {
+            counts[p[0]][p[1]]++;
+          }
+        }
+      }
+    }
+
+    var capturedByW = [];
+    var matW = 0;
+    var matB = 0;
+
+    for (var i = 0; i < PIECE_ORDER.length; i++) {
+      var t = PIECE_ORDER[i];
+      var diffB = Math.max(0, START_PIECES.b[t] - counts.b[t]);
+      for (var j = 0; j < diffB; j++) {
+        capturedByW.push({ color: 'b', type: t });
+      }
+      matW += diffB * PIECE_VALUES[t];
+    }
+
+    var capturedByB = [];
+    for (var k = 0; k < PIECE_ORDER.length; k++) {
+      var typeW = PIECE_ORDER[k];
+      var diffW = Math.max(0, START_PIECES.w[typeW] - counts.w[typeW]);
+      for (var l = 0; l < diffW; l++) {
+        capturedByB.push({ color: 'w', type: typeW });
+      }
+      matB += diffW * PIECE_VALUES[typeW];
+    }
+
+    return {
+      w: { pieces: capturedByW, diff: matW > matB ? matW - matB : 0 },
+      b: { pieces: capturedByB, diff: matB > matW ? matB - matW : 0 }
+    };
+  }
+
   return {
     FILES: FILES,
     startBoard: startBoard,
@@ -451,6 +503,7 @@
     allLegalMoves: allLegalMoves,
     toSAN: toSAN,
     toFEN: toFEN,
+    getCaptured: getCaptured,
     makeMove: makeMove,
     findLegalMove: findLegalMove
   };

@@ -1405,6 +1405,9 @@
   function renderSeats() {
     var state = app.state;
     var game = state.game;
+    var captured = (ENG && typeof ENG.getCaptured === 'function')
+      ? ENG.getCaptured(game.board)
+      : { w: { pieces: [], diff: 0 }, b: { pieces: [], diff: 0 } };
 
     ['w', 'b'].forEach(function (color) {
       var seat = $('seat' + color.toUpperCase());
@@ -1413,6 +1416,7 @@
       var youEl = seat.querySelector('.seat-you');
       var turnEl = seat.querySelector('.seat-turn');
       var connEl = seat.querySelector('.seat-conn');
+      var capturedEl = $('captured' + color.toUpperCase());
 
       setText(nameEl, data ? data.name : 'Waiting…');
       youEl.classList.toggle('hidden', app.color !== color);
@@ -1426,6 +1430,25 @@
 
       connEl.classList.toggle('online', Boolean(data && data.connected));
       connEl.classList.toggle('offline', !(data && data.connected));
+
+      if (capturedEl) {
+        var capData = captured[color] || { pieces: [], diff: 0 };
+        capturedEl.innerHTML = '';
+        if (capData.pieces.length) {
+          capData.pieces.forEach(function (p) {
+            var span = document.createElement('span');
+            span.className = 'captured-piece ' + p.color;
+            span.textContent = GLYPHS[p.type] || '';
+            capturedEl.appendChild(span);
+          });
+          if (capData.diff > 0) {
+            var diffSpan = document.createElement('span');
+            diffSpan.className = 'captured-diff';
+            diffSpan.textContent = '+' + capData.diff;
+            capturedEl.appendChild(diffSpan);
+          }
+        }
+      }
     });
   }
 
@@ -2120,6 +2143,25 @@
       ghost.className = 'drag-ghost hidden';
     }
 
+    // Prevent touch scrolling gestures from hijacking piece drags on touch devices.
+    boardEl.addEventListener('touchstart', function (event) {
+      if (!canInteract()) return;
+      var cell = event.target.closest ? event.target.closest('.cell') : null;
+      if (!cell) return;
+      var r = Number(cell.dataset.r);
+      var c = Number(cell.dataset.c);
+      var piece = app.state.game.board[r][c];
+      if (piece && piece[0] === app.color) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    boardEl.addEventListener('touchmove', function (event) {
+      if (app.drag) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+
     boardEl.addEventListener('pointerdown', function (event) {
       if (!canInteract()) return;
       var cell = event.target.closest ? event.target.closest('.cell') : null;
@@ -2136,11 +2178,23 @@
       });
       if (isTarget) return;
 
+      if (typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
+      if (typeof event.target.setPointerCapture === 'function') {
+        try {
+          event.target.setPointerCapture(event.pointerId);
+        } catch (err) {}
+      }
+
       app.drag = { r: r, c: c, x: event.clientX, y: event.clientY, moved: false };
     });
 
     window.addEventListener('pointermove', function (event) {
       if (!app.drag) return;
+      if (typeof event.preventDefault === 'function') {
+        event.preventDefault();
+      }
       var dx = event.clientX - app.drag.x;
       var dy = event.clientY - app.drag.y;
 
