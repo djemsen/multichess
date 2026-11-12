@@ -857,7 +857,8 @@
       return;
     }
 
-    ENG.makeMove(game, move);
+    var san = ENG.makeMove(game, move);
+    sound.playForSan(san);
     if (!game.over) startLocalClock(game.turn);
 
     app.busy = false;
@@ -883,7 +884,8 @@
       return;
     }
 
-    ENG.makeMove(app.state.game, move);
+    var san = ENG.makeMove(app.state.game, move);
+    sound.playForSan(san);
     if (!app.state.game.over) startLocalClock(app.state.game.turn);
 
     app.busy = false;
