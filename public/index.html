@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>MultiChess — local network chess</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>Multi<span>Chess</span></h1>
+      <p>Two players &middot; two machines &middot; same network</p>
+    </div>
+    <div class="top-actions">
+      <button id="musicBtn" class="icon-btn" type="button" aria-pressed="true" aria-label="Mute music" title="Mute music">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 18V5l11-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="17" cy="16" r="3"/>
+          <path class="music-slash" d="m3 3 18 18"/>
+        </svg>
+      </button>
+      <input id="musicVolume" class="music-volume" type="range" min="0" max="100" step="1" value="100" aria-label="Music volume" title="Music volume" />
+      <button id="soundBtn" class="icon-btn" type="button" aria-pressed="true" aria-label="Mute sound" title="Mute sound">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6.5 9H3v6h3.5L11 19z"/>
+          <path class="sound-wave" d="M15 9.2a4.2 4.2 0 0 1 0 5.6"/>
+          <path class="sound-wave" d="M18 6.3a8.2 8.2 0 0 1 0 11.4"/>
+          <path class="sound-slash" d="m4 4 16 16"/>
+        </svg>
+      </button>
+      <button id="roomBadge" class="room-badge hidden" type="button" title="Copy invite link">
+        <span id="connDot" class="conn-dot offline" aria-hidden="true"></span>
+        <span>Room <strong id="roomBadgeCode">-----</strong></span>
+        <span class="copy-hint">copy link</span>
+      </button>
+    </div>
+  </header>
+
+  <section id="modeScreen" class="mode-screen hidden">
+    <div class="lobby-card">
+      <h2>MultiChess</h2>
+      <p class="lobby-sub">One board, two players — or one player and the computer.</p>
+
+      <label class="field difficulty-field">
+        <span>Computer difficulty</span>
+        <select id="difficultySelect" aria-label="Computer difficulty">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </label>
+
+      <button id="singlePlayerBtn" class="primary wide" type="button">Play Single Player</button>
+
+      <div class="divider"><span>or play online</span></div>
+
+      <button id="multiplayerBtn" class="wide" type="button">Play Multiplayer</button>
+    </div>
+
+    <div class="lobby-info">
+      <h3>Online play</h3>
+      <ol>
+        <li>Run <code>node server.js</code> on one machine.</li>
+        <li>Open the printed <strong>Network</strong> address on both machines.</li>
+        <li>One player creates a room; the other joins with the code.</li>
+      </ol>
+      <p>Moves are validated by the server and streamed to both boards. Refresh the page to reconnect.</p>
+    </div>
+  </section>
+
+  <section id="lobby" class="lobby">
+    <div class="lobby-card">
+      <h2>Start a game</h2>
+      <p class="lobby-sub">Create a room, then share the code or link with the other player.</p>
+
+      <label class="field">
+        <span>Your name</span>
+        <input id="nameInput" maxlength="20" autocomplete="nickname" placeholder="Player">
+      </label>
+
+      <button id="createBtn" class="primary wide" type="button">Create a game</button>
+
+      <div class="divider"><span>or join a room</span></div>
+
+      <div class="join-row">
+        <input id="codeInput" class="code-input" maxlength="5" autocomplete="off" spellcheck="false" placeholder="CODE" aria-label="Room code">
+        <button id="joinBtn" type="button">Join</button>
+      </div>
+
+      <p id="lobbyError" class="error" role="alert"></p>
+    </div>
+
+    <div class="lobby-info">
+      <h3>How it works</h3>
+      <ol>
+        <li>Run <code>node server.js</code> on one machine.</li>
+        <li>Open the printed <strong>Network</strong> address on both machines.</li>
+        <li>One player creates a room; the other joins with the code.</li>
+      </ol>
+      <p>Moves are validated by the server and streamed to both boards. Refresh the page to reconnect.</p>
+    </div>
+  </section>
+
+  <section id="game" class="game hidden">
+    <div class="board-wrap">
+      <div id="board" class="board" aria-label="Chess board"></div>
+
+      <div id="waiting" class="board-overlay hidden">
+        <div class="waiting-card">
+          <span class="eyebrow">Room created</span>
+          <h3>Waiting for an opponent</h3>
+          <p>Share this room code</p>
+          <div id="waitingCode" class="big-code">-----</div>
+          <p class="muted">Or send them the invite link. Both machines must be on the same network.</p>
+          <button id="copyLinkBtn" class="primary" type="button">Copy invite link</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="seats">
+        <div class="seat" id="seatW">
+          <span class="seat-swatch w" aria-hidden="true"></span>
+          <span class="seat-name">White</span>
+          <span class="seat-you hidden">you</span>
+          <span class="seat-tail">
+            <span class="seat-turn hidden" title="To move">&#9679;</span>
+            <span class="seat-conn offline" aria-hidden="true"></span>
+          </span>
+        </div>
+        <div class="seat" id="seatB">
+          <span class="seat-swatch b" aria-hidden="true"></span>
+          <span class="seat-name">Black</span>
+          <span class="seat-you hidden">you</span>
+          <span class="seat-tail">
+            <span class="seat-turn hidden" title="To move">&#9679;</span>
+            <span class="seat-conn offline" aria-hidden="true"></span>
+          </span>
+        </div>
+      </div>
+
+      <div id="status" class="status">Connecting&hellip;</div>
+
+      <div id="offerBar" class="offer-bar hidden">
+        <span id="offerText"></span>
+        <div class="offer-actions">
+          <button id="acceptDrawBtn" class="small primary hidden" type="button">Accept</button>
+          <button id="declineDrawBtn" class="small hidden" type="button">Decline</button>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="drawBtn" type="button">Offer draw</button>
+        <button id="resignBtn" type="button">Resign</button>
+        <button id="flipBtn" type="button">Flip</button>
+        <button id="rematchBtn" class="primary hidden" type="button">Rematch</button>
+        <button id="leaveBtn" class="ghost" type="button">Leave</button>
+      </div>
+
+      <div class="chat-box">
+        <div class="chat-title">
+          <span>Chat</span>
+          <span class="chat-note">both players</span>
+        </div>
+        <div id="chatLog" class="chat-log" aria-live="polite">
+          <div class="chat-empty">No messages yet — say hello.</div>
+        </div>
+        <form id="chatForm" class="chat-form" autocomplete="off">
+          <input id="chatInput" maxlength="300" placeholder="Message…" aria-label="Chat message">
+          <button id="chatSendBtn" class="small primary" type="submit">Send</button>
+        </form>
+      </div>
+
+      <div class="moves-box">
+        <div class="moves-title">Moves</div>
+        <div id="moves" class="moves">
+          <div class="empty-log">No moves yet.</div>
+        </div>
+      </div>
+
+      <p class="hint">
+        Click a piece, then a highlighted square. Castling, en passant and
+        promotion are supported. The server rejects illegal moves and keeps
+        both boards in sync.
+      </p>
+    </aside>
+  </section>
+</div>
+
+<div id="promo" class="overlay hidden">
+  <div class="modal">
+    <h2>Promote to</h2>
+    <div id="promoOptions" class="promo-options"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
